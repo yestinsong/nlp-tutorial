@@ -326,9 +326,8 @@ def greedy_decoder(model, enc_input, start_symbol):
     return dec_input
 
 # Test
-# greedy_dec_input = greedy_decoder(model, enc_inputs[0].view(1, -1), start_symbol=tgt_vocab["S"])
-enc_inputs, dec_inputs, _ = next(iter(loader))
-predict, _, _, _ = model(enc_inputs[0].view(1, -1), dec_inputs[0].view(1, -1)) # model(enc_inputs[0].view(1, -1), greedy_dec_input)
+enc_inputs, _, _ = next(iter(loader))
+greedy_dec_input = greedy_decoder(model, enc_inputs[0].view(1, -1), start_symbol=tgt_vocab["S"])
+predict, _, _, _ = model(enc_inputs[0].view(1, -1), greedy_dec_input)
 predict = predict.data.max(1, keepdim=True)[1]
 print(enc_inputs[0], '->', [idx2word[n.item()] for n in predict.squeeze()])
-
