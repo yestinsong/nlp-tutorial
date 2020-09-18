@@ -12,6 +12,7 @@ Original file is located at
   Reference : https://github.com/jadore801120/attention-is-all-you-need-pytorch
               https://github.com/JayParks/transformer
 '''
+import math
 import torch
 import numpy as np
 import torch.nn as nn
@@ -77,16 +78,22 @@ class MyDataSet(Data.Dataset):
 
 loader = Data.DataLoader(MyDataSet(enc_inputs, dec_inputs, dec_outputs), 2, True)
 
-def get_sinusoid_encoding_table(n_position, d_model):
-    def cal_angle(position, hid_idx):
-        return position / np.power(10000, 2 * (hid_idx // 2) / d_model)
-    def get_posi_angle_vec(position):
-        return [cal_angle(position, hid_j) for hid_j in range(d_model)]
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
 
-    sinusoid_table = np.array([get_posi_angle_vec(pos_i) for pos_i in range(n_position)])
-    sinusoid_table[:, 0::2] = np.sin(sinusoid_table[:, 0::2])  # dim 2i
-    sinusoid_table[:, 1::2] = np.cos(sinusoid_table[:, 1::2])  # dim 2i+1
-    return torch.FloatTensor(sinusoid_table)
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        x = x + self.pe[:x.size(0), :]
+        return self.dropout(x)
 
 def get_attn_pad_mask(seq_q, seq_k):
     '''
@@ -213,16 +220,15 @@ class Encoder(nn.Module):
     def __init__(self):
         super(Encoder, self).__init__()
         self.src_emb = nn.Embedding(src_vocab_size, d_model)
-        self.pos_emb = nn.Embedding.from_pretrained(get_sinusoid_encoding_table(src_vocab_size, d_model),freeze=True)
+        self.pos_emb = PositionalEncoding(d_model)
         self.layers = nn.ModuleList([EncoderLayer() for _ in range(n_layers)])
 
     def forward(self, enc_inputs):
         '''
         enc_inputs: [batch_size, src_len]
         '''
-        word_emb = self.src_emb(enc_inputs) # [batch_size, src_len, d_model]
-        pos_emb = self.pos_emb(enc_inputs) # [batch_size, src_len, d_model]
-        enc_outputs = word_emb + pos_emb
+        enc_outputs = self.src_emb(enc_inputs) # [batch_size, src_len, d_model]
+        enc_outputs = self.pos_emb(enc_outputs.transpose(0, 1)).transpose(0, 1) # [batch_size, src_len, d_model]
         enc_self_attn_mask = get_attn_pad_mask(enc_inputs, enc_inputs) # [batch_size, src_len, src_len]
         enc_self_attns = []
         for layer in self.layers:
@@ -235,7 +241,7 @@ class Decoder(nn.Module):
     def __init__(self):
         super(Decoder, self).__init__()
         self.tgt_emb = nn.Embedding(tgt_vocab_size, d_model)
-        self.pos_emb = nn.Embedding.from_pretrained(get_sinusoid_encoding_table(tgt_vocab_size, d_model),freeze=True)
+        self.pos_emb = PositionalEncoding(d_model)
         self.layers = nn.ModuleList([DecoderLayer() for _ in range(n_layers)])
 
     def forward(self, dec_inputs, enc_inputs, enc_outputs):
@@ -244,9 +250,8 @@ class Decoder(nn.Module):
         enc_intpus: [batch_size, src_len]
         enc_outputs: [batsh_size, src_len, d_model]
         '''
-        word_emb = self.tgt_emb(dec_inputs) # [batch_size, tgt_len, d_model]
-        pos_emb = self.pos_emb(dec_inputs) # [batch_size, tgt_len, d_model]
-        dec_outputs = word_emb + pos_emb
+        dec_outputs = self.tgt_emb(dec_inputs) # [batch_size, tgt_len, d_model]
+        dec_outputs = self.pos_emb(dec_outputs.transpose(0, 1)).transpose(0, 1) # [batch_size, tgt_len, d_model]
         dec_self_attn_pad_mask = get_attn_pad_mask(dec_inputs, dec_inputs) # [batch_size, tgt_len, tgt_len]
         dec_self_attn_subsequence_mask = get_attn_subsequence_mask(dec_inputs) # [batch_size, tgt_len, tgt_len]
         dec_self_attn_mask = torch.gt((dec_self_attn_pad_mask + dec_self_attn_subsequence_mask), 0) # [batch_size, tgt_len, tgt_len]
@@ -331,3 +336,4 @@ greedy_dec_input = greedy_decoder(model, enc_inputs[0].view(1, -1), start_symbol
 predict, _, _, _ = model(enc_inputs[0].view(1, -1), greedy_dec_input)
 predict = predict.data.max(1, keepdim=True)[1]
 print(enc_inputs[0], '->', [idx2word[n.item()] for n in predict.squeeze()])
+
