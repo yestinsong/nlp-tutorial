@@ -237,10 +237,10 @@ class BERT(nn.Module):
         h_pooled = self.fc(output[:, 0]) # [batch_size, d_model]
         logits_clsf = self.classifier(h_pooled) # [batch_size, 2] predict isNext
 
-        masked_pos = masked_pos[:, :, None].expand(-1, -1, d_model) # [batch_size, maxlen, d_model]
-        h_masked = torch.gather(output, 1, masked_pos) # masking position [batch_size, maxlen, d_model]
-        h_masked = self.activ2(self.linear(h_masked)) # [batch_size, maxlen, d_model]
-        logits_lm = self.fc2(h_masked) # [batch_size, maxlen, vocab_size]
+        masked_pos = masked_pos[:, :, None].expand(-1, -1, d_model) # [batch_size, max_pred, d_model]
+        h_masked = torch.gather(output, 1, masked_pos) # masking position [batch_size, max_pred, d_model]
+        h_masked = self.activ2(self.linear(h_masked)) # [batch_size, max_pred, d_model]
+        logits_lm = self.fc2(h_masked) # [batch_size, max_pred, vocab_size]
         return logits_lm, logits_clsf
 model = BERT()
 criterion = nn.CrossEntropyLoss()
