@@ -19,8 +19,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data as Data
 
-# device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 # S: Symbol that shows starting of decoding input
 # E: Symbol that shows starting of decoding output
 # P: Symbol that will fill in blank sequence if current batch data size is short than time steps
@@ -92,6 +90,9 @@ class PositionalEncoding(nn.Module):
         self.register_buffer('pe', pe)
 
     def forward(self, x):
+        '''
+        x: [seq_len, batch_size, d_model]
+        '''
         x = x + self.pe[:x.size(0), :]
         return self.dropout(x)
 
@@ -161,7 +162,7 @@ class MultiHeadAttention(nn.Module):
         context, attn = ScaledDotProductAttention()(Q, K, V, attn_mask)
         context = context.transpose(1, 2).reshape(batch_size, -1, n_heads * d_v) # context: [batch_size, len_q, n_heads * d_v]
         output = self.fc(context) # [batch_size, len_q, d_model]
-        return nn.LayerNorm(d_model)(output + residual), attn
+        return nn.LayerNorm(d_model).cuda()(output + residual), attn
 
 class PoswiseFeedForwardNet(nn.Module):
     def __init__(self):
@@ -177,7 +178,7 @@ class PoswiseFeedForwardNet(nn.Module):
         '''
         residual = inputs
         output = self.fc(inputs)
-        return nn.LayerNorm(d_model)(output + residual) # [batch_size, seq_len, d_model]
+        return nn.LayerNorm(d_model).cuda()(output + residual) # [batch_size, seq_len, d_model]
 
 class EncoderLayer(nn.Module):
     def __init__(self):
@@ -251,10 +252,10 @@ class Decoder(nn.Module):
         enc_outputs: [batsh_size, src_len, d_model]
         '''
         dec_outputs = self.tgt_emb(dec_inputs) # [batch_size, tgt_len, d_model]
-        dec_outputs = self.pos_emb(dec_outputs.transpose(0, 1)).transpose(0, 1) # [batch_size, tgt_len, d_model]
-        dec_self_attn_pad_mask = get_attn_pad_mask(dec_inputs, dec_inputs) # [batch_size, tgt_len, tgt_len]
-        dec_self_attn_subsequence_mask = get_attn_subsequence_mask(dec_inputs) # [batch_size, tgt_len, tgt_len]
-        dec_self_attn_mask = torch.gt((dec_self_attn_pad_mask + dec_self_attn_subsequence_mask), 0) # [batch_size, tgt_len, tgt_len]
+        dec_outputs = self.pos_emb(dec_outputs.transpose(0, 1)).transpose(0, 1).cuda() # [batch_size, tgt_len, d_model]
+        dec_self_attn_pad_mask = get_attn_pad_mask(dec_inputs, dec_inputs).cuda() # [batch_size, tgt_len, tgt_len]
+        dec_self_attn_subsequence_mask = get_attn_subsequence_mask(dec_inputs).cuda() # [batch_size, tgt_len, tgt_len]
+        dec_self_attn_mask = torch.gt((dec_self_attn_pad_mask + dec_self_attn_subsequence_mask), 0).cuda() # [batch_size, tgt_len, tgt_len]
 
         dec_enc_attn_mask = get_attn_pad_mask(dec_inputs, enc_inputs) # [batc_size, tgt_len, src_len]
 
@@ -269,9 +270,9 @@ class Decoder(nn.Module):
 class Transformer(nn.Module):
     def __init__(self):
         super(Transformer, self).__init__()
-        self.encoder = Encoder()
-        self.decoder = Decoder()
-        self.projection = nn.Linear(d_model, tgt_vocab_size, bias=False)
+        self.encoder = Encoder().cuda()
+        self.decoder = Decoder().cuda()
+        self.projection = nn.Linear(d_model, tgt_vocab_size, bias=False).cuda()
     def forward(self, enc_inputs, dec_inputs):
         '''
         enc_inputs: [batch_size, src_len]
@@ -287,7 +288,7 @@ class Transformer(nn.Module):
         dec_logits = self.projection(dec_outputs) # dec_logits: [batch_size, tgt_len, tgt_vocab_size]
         return dec_logits.view(-1, dec_logits.size(-1)), enc_self_attns, dec_self_attns, dec_enc_attns
 
-model = Transformer()
+model = Transformer().cuda()
 criterion = nn.CrossEntropyLoss(ignore_index=0)
 optimizer = optim.SGD(model.parameters(), lr=1e-3, momentum=0.99)
 
@@ -298,7 +299,7 @@ for epoch in range(30):
       dec_inputs: [batch_size, tgt_len]
       dec_outputs: [batch_size, tgt_len]
       '''
-      # enc_inputs, dec_inputs, dec_outputs = enc_inputs.to(device), dec_inputs.to(device), dec_outputs.to(device)
+      enc_inputs, dec_inputs, dec_outputs = enc_inputs.cuda(), dec_inputs.cuda(), dec_outputs.cuda()
       # outputs: [batch_size * tgt_len, tgt_vocab_size]
       outputs, enc_self_attns, dec_self_attns, dec_enc_attns = model(enc_inputs, dec_inputs)
       loss = criterion(outputs, dec_outputs.view(-1))
@@ -332,8 +333,8 @@ def greedy_decoder(model, enc_input, start_symbol):
 
 # Test
 enc_inputs, _, _ = next(iter(loader))
-greedy_dec_input = greedy_decoder(model, enc_inputs[0].view(1, -1), start_symbol=tgt_vocab["S"])
-predict, _, _, _ = model(enc_inputs[0].view(1, -1), greedy_dec_input)
+greedy_dec_input = greedy_decoder(model, enc_inputs[0].view(1, -1).cuda(), start_symbol=tgt_vocab["S"])
+predict, _, _, _ = model(enc_inputs[0].view(1, -1).cuda(), greedy_dec_input)
 predict = predict.data.max(1, keepdim=True)[1]
 print(enc_inputs[0], '->', [idx2word[n.item()] for n in predict.squeeze()])
 
