@@ -34,7 +34,6 @@
   - Paper - [Convolutional Neural Networks for Sentence Classification(2014)](http://www.aclweb.org/anthology/D14-1181)
   - Colab -  [TextCNN_Torch.ipynb](https://colab.research.google.com/drive/13o8uID830WHL3rRZhXMoANc2XuqehRta?usp=sharing)
   - bilibili - https://www.bilibili.com/video/BV1ip4y1U735/
-- 2-2. DCNN(Dynamic Convolutional Neural Network)
 
 
 
