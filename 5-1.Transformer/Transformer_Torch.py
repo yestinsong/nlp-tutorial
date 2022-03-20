@@ -324,7 +324,7 @@ def greedy_decoder(model, enc_input, start_symbol):
     terminal = False
     next_symbol = start_symbol
     while not terminal:         
-        dec_input=torch.cat([dec_input.detach(),torch.tensor([[next_symbol]],dtype=enc_input.dtype)],-1)
+        dec_input = torch.cat([dec_input.detach(),torch.tensor([[next_symbol]],dtype=enc_input.dtype).cuda()],-1)
         dec_outputs, _, _ = model.decoder(dec_input, enc_input, enc_outputs)
         projected = model.projection(dec_outputs)
         prob = projected.squeeze(0).max(dim=-1, keepdim=False)[1]
@@ -337,6 +337,7 @@ def greedy_decoder(model, enc_input, start_symbol):
 
 # Test
 enc_inputs, _, _ = next(iter(loader))
+enc_inputs = enc_inputs.cuda()
 for i in range(len(enc_inputs)):
     greedy_dec_input = greedy_decoder(model, enc_inputs[i].view(1, -1), start_symbol=tgt_vocab["S"])
     predict, _, _, _ = model(enc_inputs[i].view(1, -1), greedy_dec_input)
